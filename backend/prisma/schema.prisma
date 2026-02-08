@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String
+  name                String?
+  razorpayCustomerId  String?   @unique
+  isActive            Boolean   @default(true)
+  emailVerifiedAt     DateTime?
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  roles            UserRole[]
+  apiProvider      ApiProvider?
+  subscriptions    Subscription[]
+  apiKeys          ApiKey[]
+  invoices         Invoice[]
+  payments         Payment[]
+  sessions         UserSession[]
+  auditLogs        AuditLog[]
+}
+
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+
+  users UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId Int
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model ApiProvider {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  displayName String
+  website     String?
+  createdAt   DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apis Api[]
+}
+
+model Api {
+  id          String    @id @default(uuid())
+  providerId  String
+  name        String
+  slug        String    @unique
+  category    String?
+  baseUrl     String
+  description String?
+  status      ApiStatus @default(DRAFT)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Documentation & Usage Fields
+  authenticationMethod     String? // "API Key"
+  rateLimits               String? // Rate limit information (descriptive text)
+  publicRateLimitPerMinute Int? // Rate limit for unauthenticated/public access (requests per minute) - used when authenticationMethod is "None"
+  documentation            String? // Dedicated documentation content (markdown)
+
+  provider ApiProvider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  plans    ApiPlan[]
+}
+
+enum ApiStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  LIVE
+  SUSPENDED
+}
+
+
+model ApiPlan {
+  id              String      @id @default(uuid())
+  apiId           String
+  name            String
+  description     String?
+  billingType     BillingType
+  priceMonthly    Int? // in smallest currency unit (e.g. paise). For FREE plans, this should be 0 or null
+  freeTier        Boolean     @default(false)
+  monthlyQuota    Int? // null means unlimited
+  createdAt       DateTime    @default(now())
+
+  api           Api            @relation(fields: [apiId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+}
+
+enum BillingType {
+  SUBSCRIPTION
+  FREE
+}
+
+model Subscription {
+  id                     String             @id @default(uuid())
+  userId                 String
+  apiPlanId              String
+  status                 SubscriptionStatus @default(ACTIVE)
+  startedAt              DateTime           @default(now())
+  endsAt                 DateTime?
+  cancelledAt            DateTime?
+  softLimit              Int?
+  razorpaySubscriptionId String?            @unique
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiPlan  ApiPlan   @relation(fields: [apiPlanId], references: [id], onDelete: Cascade)
+  apiKeys  ApiKey[]
+  invoices Invoice[]
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+model ApiKey {
+  id             String    @id @default(uuid())
+  subscriptionId String
+  userId         String
+  key            String    @unique
+  label          String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UsageLog {
+  id             String   @id @default(uuid())
+  apiId          String
+  apiKeyId       String?
+  subscriptionId String?
+  userId         String?
+  path           String
+  method         String
+  statusCode     Int
+  latencyMs      Int
+  timestamp      DateTime @default(now())
+  bytesIn        Int      @default(0)
+  bytesOut       Int      @default(0)
+
+  @@index([apiId, timestamp])
+  @@index([subscriptionId, timestamp])
+  @@index([userId, timestamp])
+}
+
+model Invoice {
+  id                String        @id @default(uuid())
+  userId            String
+  subscriptionId    String?
+  apiId             String?       // Kept when subscription is deleted so provider earnings still attribute
+  periodStart       DateTime
+  periodEnd         DateTime
+  amount            Int // smallest currency unit
+  currency          String        @default("INR")
+  status            InvoiceStatus @default(PENDING)
+  dueDate           DateTime
+  createdAt         DateTime      @default(now())
+  type              InvoiceType   @default(SUBSCRIPTION)
+  externalInvoiceId String?
+  externalAddonId   String?
+  paidAt            DateTime?
+  updatedAt         DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+
+  @@index([subscriptionId, status, createdAt])
+  @@index([apiId, status])
+  @@index([type, status, createdAt])
+}
+
+enum InvoiceType {
+  SUBSCRIPTION
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  invoiceId         String
+  userId            String
+  provider          String
+  externalPaymentId String
+  status            PaymentStatus @default(PENDING)
+  amount            Int
+  currency          String        @default("INR")
+  payload           Json
+  retryCount        Int           @default(0)
+  lastRetryAt       DateTime?
+  maxRetries        Int           @default(3)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, retryCount])
+  @@index([invoiceId, status])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String
+  deviceInfo   String?
+  ipAddress    String?
+  refreshToken String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
