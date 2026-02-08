@@ -1,0 +1,53 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: marketplace
+      POSTGRES_DB: api_marketplace
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://marketplace:marketplace@postgres:5432/api_marketplace
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: supersecret
+      JWT_REFRESH_SECRET: superrefresh
+      CORS_ORIGIN: "*"
+      # Razorpay Test Mode (set to "true" to use mock payments)
+      RAZORPAY_TEST_MODE: "true"
+      # Optional: Use real Razorpay test keys from https://razorpay.com/docs/payments/test-cards/
+      # RAZORPAY_TEST_KEY_ID: "rzp_test_..."
+      # RAZORPAY_TEST_KEY_SECRET: "..."
+      # RAZORPAY_WEBHOOK_SECRET: "test_webhook_secret"
+      # Email Configuration (optional - set EMAIL_ENABLED=false to disable)
+      EMAIL_ENABLED: "false"
+      # EMAIL_HOST: "smtp.gmail.com"
+      # EMAIL_PORT: "587"
+      # EMAIL_USER: "your-email@gmail.com"
+      # EMAIL_PASSWORD: "your-app-password"
+      # EMAIL_FROM: "noreply@apimarketplace.com"
+      # EMAIL_FROM_NAME: "API Marketplace"
+      # Provider Revenue Commission Rate (default: 0.1 = 10%)
+      # PROVIDER_COMMISSION_RATE: "0.1"
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+      - redis
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+
+
