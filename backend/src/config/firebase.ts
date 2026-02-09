@@ -1,27 +1,22 @@
 import admin from "firebase-admin";
 import { config } from "./env";
 import { logger } from "../common/logger";
-import path from "path";
 
-if (config.firebaseServiceAccountKey) {
-  let serviceAccount;
+if (config.firebaseProjectId && config.firebaseClientEmail && config.firebasePrivateKey) {
   try {
-    // Try to require it if it's a path or JSON object
-    if (config.firebaseServiceAccountKey.startsWith("{")) {
-      serviceAccount = JSON.parse(config.firebaseServiceAccountKey);
-    } else {
-      serviceAccount = require(path.resolve(config.firebaseServiceAccountKey));
-    }
-
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+      credential: admin.credential.cert({
+        projectId: config.firebaseProjectId,
+        clientEmail: config.firebaseClientEmail,
+        privateKey: config.firebasePrivateKey,
+      }),
     });
     logger.info("Firebase Admin initialized");
   } catch (error) {
     logger.error("Failed to initialize Firebase Admin:", error);
   }
 } else {
-  logger.warn("FIREBASE_SERVICE_ACCOUNT_KEY not provided. OAuth login will fail.");
+  logger.warn("Firebase env vars (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) not provided. OAuth login will fail.");
 }
 
 // Export auth only if app is initialized, otherwise export a dummy object

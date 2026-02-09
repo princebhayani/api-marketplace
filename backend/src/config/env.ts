@@ -20,7 +20,9 @@ export interface AppConfig {
   emailPassword: string;
   emailFrom: string;
   emailFromName: string;
-  firebaseServiceAccountKey: string;
+  firebaseProjectId: string;
+  firebaseClientEmail: string;
+  firebasePrivateKey: string;
 }
 
 function requireEnv(name: string): string {
@@ -62,6 +64,8 @@ export const config: AppConfig = {
   emailPassword: process.env.EMAIL_PASSWORD || "",
   emailFrom: process.env.EMAIL_FROM || process.env.EMAIL_USER || "noreply@apimarketplace.com",
   emailFromName: process.env.EMAIL_FROM_NAME || "API Marketplace",
-  firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "",
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID || "",
+  firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
+  firebasePrivateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
 };
 
