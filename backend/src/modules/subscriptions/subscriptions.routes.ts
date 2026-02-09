@@ -17,8 +17,8 @@ const createKeySchema = z.object({
 router.post("/", authenticateJWT, async (req, res, next) => {
   try {
     const body = subscribeSchema.parse(req.body);
-    const sub = await service.subscribe(req.user!.sub, body.apiPlanId);
-    res.status(201).json({ success: true, subscription: sub });
+    const { subscription } = await service.subscribe(req.user!.sub, body.apiPlanId);
+    res.status(201).json({ success: true, subscription });
   } catch (err) {
     next(err);
   }
