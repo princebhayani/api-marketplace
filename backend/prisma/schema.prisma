@@ -7,6 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum SystemRole {
+  SuperAdmin
+  User
+}
+
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
@@ -17,10 +22,10 @@ model User {
   emailVerifiedAt     DateTime?
   lastLoginAt         DateTime?
   failedLoginAttempts Int       @default(0)
+  role                SystemRole @default(User)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  roles            UserRole[]
   apiProvider      ApiProvider?
   subscriptions    Subscription[]
   apiKeys          ApiKey[]
@@ -28,24 +33,6 @@ model User {
   payments         Payment[]
   sessions         UserSession[]
   auditLogs        AuditLog[]
-}
-
-model Role {
-  id          Int     @id @default(autoincrement())
-  name        String  @unique
-  description String?
-
-  users UserRole[]
-}
-
-model UserRole {
-  userId String
-  roleId Int
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@id([userId, roleId])
 }
 
 model ApiProvider {

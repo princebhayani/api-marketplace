@@ -31,10 +31,6 @@ export class AuthService {
       data: { email, passwordHash, name },
     });
 
-    // Auto-assign User role to all users
-    // This allows users to both add APIs and use APIs
-    await roleRepo.assignRoleToUser(user.id, "User");
-
     // Create ApiProvider record for the user
     await prisma.apiProvider.upsert({
       where: { userId: user.id },
@@ -49,14 +45,7 @@ export class AuthService {
       logger.error("Failed to send welcome email", err);
     });
 
-    // Fetch user with roles for response
-    const userWithRoles = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: { roles: { include: { role: true } } },
-    });
-
-    const roleNames = userWithRoles?.roles?.map((r) => r.role.name) ?? [];
-    const tokens = await this.issueTokens(user.id, user.email, roleNames);
+    const tokens = await this.issueTokens(user.id, user.email, [user.role]);
 
     auditLog.log({
       userId: user.id,
@@ -71,7 +60,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        roles: roleNames,
+        roles: [user.role],
       },
       ...tokens,
     };
@@ -80,7 +69,6 @@ export class AuthService {
   async login(email: string, password: string, deviceInfo?: string, ip?: string) {
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { roles: { include: { role: true } } },
     });
 
     if (!user || !user.isActive) {
@@ -92,26 +80,17 @@ export class AuthService {
       throw new AppError("Invalid credentials", 401);
     }
 
-    // Ensure User role exists
-    const roleNames = user.roles?.map((r) => r.role.name) ?? [];
-    if (!roleNames.includes("User") && !roleNames.includes("SuperAdmin")) {
-      await roleRepo.assignRoleToUser(user.id, "User");
-      roleNames.push("User");
-    }
-
     // Ensure ApiProvider record exists for User and SuperAdmin (both can create/manage APIs)
-    if (roleNames.includes("User") || roleNames.includes("SuperAdmin")) {
-      await prisma.apiProvider.upsert({
-        where: { userId: user.id },
-        update: {},
-        create: {
-          userId: user.id,
-          displayName: user.name || user.email.split("@")[0],
-        },
-      });
-    }
+    await prisma.apiProvider.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        displayName: user.name || user.email.split("@")[0],
+      },
+    });
 
-    const tokens = await this.issueTokens(user.id, user.email, roleNames);
+    const tokens = await this.issueTokens(user.id, user.email, [user.role]);
 
     await prisma.userSession.create({
       data: {
@@ -141,7 +120,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        roles: roleNames,
+        roles: [user.role],
       },
       ...tokens,
     };
@@ -150,15 +129,14 @@ export class AuthService {
   async refresh(refreshToken: string) {
     const session = await prisma.userSession.findUnique({
       where: { refreshToken },
-      include: { user: { include: { roles: { include: { role: true } } } } },
+      include: { user: true },
     });
 
     if (!session || session.revokedAt || session.expiresAt < new Date()) {
       throw new AppError("Invalid refresh token", 401);
     }
 
-    const roles = session.user.roles.map((r) => r.role.name);
-    const tokens = await this.issueTokens(session.user.id, session.user.email, roles);
+    const tokens = await this.issueTokens(session.user.id, session.user.email, [session.user.role]);
 
     await prisma.userSession.update({
       where: { id: session.id },
@@ -207,21 +185,18 @@ export class AuthService {
       });
     }
 
-    // Fetch updated user with roles
-    const userWithRoles = await prisma.user.findUnique({
+    const updatedUser = await prisma.user.findUnique({
       where: { id: userId },
-      include: { roles: { include: { role: true } } },
     });
 
-    const roleNames = userWithRoles?.roles?.map((r) => r.role.name) ?? [];
-    const tokens = await this.issueTokens(userId, userWithRoles!.email, roleNames);
+    const tokens = await this.issueTokens(userId, updatedUser!.email, [updatedUser!.role]);
 
     return {
       user: {
-        id: userWithRoles!.id,
-        email: userWithRoles!.email,
-        name: userWithRoles!.name,
-        roles: roleNames,
+        id: updatedUser!.id,
+        email: updatedUser!.email,
+        name: updatedUser!.name,
+        roles: [updatedUser!.role],
       },
       ...tokens,
     };
@@ -257,7 +232,6 @@ export class AuthService {
 
     let user = await prisma.user.findUnique({
       where: { email },
-      include: { roles: { include: { role: true } } },
     });
 
     if (!user) {
@@ -270,30 +244,19 @@ export class AuthService {
           name: name || email.split("@")[0],
           emailVerifiedAt: new Date(),
         },
-        include: { roles: { include: { role: true } } },
       });
     }
 
-    // Ensure User role exists
-    const roleNames = user.roles?.map((r) => r.role.name) ?? [];
+    await prisma.apiProvider.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        displayName: user.name || user.email.split("@")[0],
+      },
+    });
 
-    if (!roleNames.includes("User") && !roleNames.includes("SuperAdmin")) {
-      await roleRepo.assignRoleToUser(user.id, "User");
-      roleNames.push("User");
-    }
-
-    if (roleNames.includes("User") || roleNames.includes("SuperAdmin")) {
-      await prisma.apiProvider.upsert({
-        where: { userId: user.id },
-        update: {},
-        create: {
-          userId: user.id,
-          displayName: user.name || user.email.split("@")[0],
-        },
-      });
-    }
-
-    const tokens = await this.issueTokens(user.id, user.email, roleNames);
+    const tokens = await this.issueTokens(user.id, user.email, [user.role]);
 
     await prisma.userSession.create({
       data: {
@@ -322,7 +285,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        roles: roleNames,
+        roles: [user.role],
       },
       ...tokens,
     };
@@ -331,15 +294,13 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { roles: { include: { role: true } } },
     });
     if (!user || !user.isActive) throw new AppError("User not found", 404);
-    const roleNames = user.roles.map((r) => r.role.name);
     return {
       id: user.id,
       email: user.email,
       name: user.name,
-      roles: roleNames,
+      roles: [user.role],
     };
   }
 
@@ -398,12 +359,7 @@ export class AuthService {
   ): Promise<{ accessToken: string; refreshToken: string }> {
     const roleNames =
       roles ??
-      (
-        await prisma.userRole.findMany({
-          where: { userId },
-          include: { role: true },
-        })
-      ).map((r) => r.role.name);
+      [(await prisma.user.findUnique({ where: { id: userId } }))!.role];
 
     const payload: JwtPayload = { sub: userId, email, roles: roleNames };
 
@@ -417,4 +373,3 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 }
-
