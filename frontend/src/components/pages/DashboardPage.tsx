@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { io, Socket } from "socket.io-client";
 import type { AuthUser } from "@/contexts/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
@@ -109,6 +110,36 @@ export function DashboardPage({ user }: Props) {
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  // Real-time usage updates via Socket.IO
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+
+    const socketUrl = process.env.NEXT_PUBLIC_GATEWAY_BASE_URL ?? "http://localhost:4000";
+    const socket = io(socketUrl, {
+      auth: { token },
+      transports: ["websocket", "polling"],
+    });
+    socketRef.current = socket;
+
+    socket.on("usage:increment", (data: { subscriptionId: string }) => {
+      setDetailedUsage((prev) =>
+        prev.map((stat) =>
+          stat.subscriptionId === data.subscriptionId
+            ? { ...stat, usage: { totalRequests: (stat.usage?.totalRequests ?? 0) + 1 } }
+            : stat
+        )
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
   }, []);
 
   async function loadData() {

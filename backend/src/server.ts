@@ -1,3 +1,4 @@
+import { createServer } from "http";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -11,6 +12,7 @@ import { connectRedis } from "./config/redis";
 import { logger } from "./common/logger";
 import { schedulePaymentRetries } from "./jobs/usageAggregation.worker";
 import { scheduleSubscriptionExpiryChecks } from "./jobs/subscriptionExpiry.worker";
+import { initSocketIO } from "./socket";
 
 async function bootstrap() {
   const app = express();
@@ -76,7 +78,10 @@ async function bootstrap() {
     }, 24 * 60 * 60 * 1000);
   }
 
-  app.listen(config.port, () => {
+  const httpServer = createServer(app);
+  initSocketIO(httpServer);
+
+  httpServer.listen(config.port, () => {
     logger.info(`API Marketplace backend listening on port ${config.port}`);
   });
 }

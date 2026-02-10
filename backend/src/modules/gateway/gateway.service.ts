@@ -2,6 +2,7 @@ import axios from "axios";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../common/middleware/errorHandler";
 import { redisClient } from "../../config/redis";
+import { emitToUser } from "../../socket";
 
 const WINDOW_MS = 60_000;
 
@@ -234,6 +235,13 @@ export class GatewayService {
         bytesOut,
       },
     });
+
+    // Emit real-time usage increment to the user (no extra DB query)
+    if (opts.userId && opts.subscriptionId) {
+      emitToUser(opts.userId, "usage:increment", {
+        subscriptionId: opts.subscriptionId,
+      });
+    }
 
     return response;
   }
